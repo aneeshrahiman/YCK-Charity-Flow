@@ -1,0 +1,269 @@
+                     renderMembers();
+                        renderLoans();
+                        renderSettings();
+                        updateBackupInfo();
+                        updateMemberSelect();
+                        updateLoanSelect();
+                        showToast('Data restored successfully', 'success');
+                    }
+                } catch (err) {
+                    showToast('Error reading file: ' + err.message, 'error');
+                }
+            };
+            reader.readAsText(file);
+            input.value = '';
+        }
+
+        function updateBackupInfo() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const data = JSON.parse(saved);
+                const size = new Blob([saved]).size;
+                document.getElementById('last-saved').textContent = data.lastSaved ? new Date(data.lastSaved).toLocaleString() : 'Never';
+                document.getElementById('storage-used').textContent = (size / 1024).toFixed(2) + ' KB';
+                document.getElementById('backup-transaction-count').textContent = (data.transactions || []).length;
+                document.getElementById('backup-member-count').textContent = (data.members || []).length;
+                document.getElementById('backup-loan-count').textContent = (data.loans || []).length;
+            }
+        }
+
+        // Toast
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const title = document.getElementById('toast-title');
+            const msg = document.getElementById('toast-message');
+
+            toast.className = `toast ${type} show`;
+            
+            const icons = {
+                success: 'fa-check-circle text-green-600',
+                error: 'fa-exclamation-circle text-red-600',
+                info: 'fa-info-circle text-blue-600'
+            };
+            
+            const titles = {
+                success: 'Success',
+                error: 'Error',
+                info: 'Information'
+            };
+
+            icon.className = `fas ${icons[type]} text-2xl`;
+            title.textContent = titles[type];
+            msg.textContent = message;
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Navigation
+        function showSection(sectionId) {
+            document.querySelectorAll('[id^="section-"]').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('active');
+                el.classList.add('text-gray-600');
+            });
+            
+            document.getElementById(`section-${sectionId}`).classList.remove('hidden');
+            document.getElementById(`nav-${sectionId}`).classList.add('active');
+            document.getElementById(`nav-${sectionId}`).classList.remove('text-gray-600');
+            
+            if (sectionId === 'transactions') {
+                updateMemberSelect();
+                updateLoanSelect();
+                toggleTransactionForm();
+            } else if (sectionId === 'dashboard') {
+                setTimeout(updateCharts, 100);
+            } else if (sectionId === 'backup') {
+                updateBackupInfo();
+            } else if (sectionId === 'settings') {
+                renderSettings();
+            } else if (sectionId === 'reports') {
+                toggleReportAccountFilter();
+            } else if (sectionId === 'loans') {
+                renderLoans();
+            } else if (sectionId === 'members') {
+                renderMembers();
+            }
+        }
+
+        // Transaction Form Toggles
+        function toggleTransactionForm() {
+            const type = document.querySelector('input[name="trans-type"]:checked').value;
+            const incomeFields = document.getElementById('income-fields');
+            const expenseFields = document.getElementById('expense-fields');
+            
+            if (type === 'income') {
+                incomeFields.classList.remove('hidden');
+                expenseFields.classList.add('hidden');
+                updateMemberSelect();
+                updateLoanSelect();
+            } else {
+                incomeFields.classList.add('hidden');
+                expenseFields.classList.remove('hidden');
+                updateExpenseDropdowns();
+            }
+        }
+
+        function toggleIncomeFields() {
+            const source = document.getElementById('income-source').value;
+            const memberContainer = document.getElementById('member-select-container');
+            const loanContainer = document.getElementById('loan-repayment-container');
+            const customSource = document.getElementById('custom-income-source');
+            
+            // Hide all first
+            memberContainer.classList.add('hidden');
+            loanContainer.classList.add('hidden');
+            customSource.classList.add('hidden');
+            
+            if (source === 'other') {
+                customSource.classList.remove('hidden');
+            } else if (source === 'Monthly Fund' || source === 'Ramadan Fund') {
+                memberContainer.classList.remove('hidden');
+                if (members.length === 0) {
+                    document.getElementById('no-members-msg').classList.remove('hidden');
+                }
+            } else if (source === 'Loan Repayment') {
+                loanContainer.classList.remove('hidden');
+                updateLoanSelect();
+            }
+        }
+
+        function toggleCustomBeneficiary() {
+            const select = document.getElementById('expense-beneficiary');
+            const custom = document.getElementById('custom-beneficiary');
+            if (select.value === 'other') {
+                custom.classList.remove('hidden');
+            } else {
+                custom.classList.add('hidden');
+            }
+        }
+
+        function toggleCustomItem() {
+            const select = document.getElementById('expense-item');
+            const custom = document.getElementById('custom-item');
+            if (select.value === 'other') {
+                custom.classList.remove('hidden');
+            } else {
+                custom.classList.add('hidden');
+            }
+        }
+
+        function toggleReportAccountFilter() {
+            const reportType = document.getElementById('report-type').value;
+            const accountFilter = document.getElementById('report-account-filter');
+            const memberFilter = document.getElementById('report-member-filter');
+            
+            if (reportType === 'account' || reportType === 'detailed' || reportType === 'income-only' || reportType === 'expense-only') {
+                accountFilter.classList.remove('hidden');
+            } else {
+                accountFilter.classList.add('hidden');
+            }
+
+            memberFilter.classList.toggle('hidden', reportType !== 'individual-member');
+            if (reportType === 'individual-member') updateReportMemberSelect();
+        }
+
+        function handleReportTypeChange() {
+            toggleReportAccountFilter();
+            generateReport();
+        }
+
+        function updateReportMemberSelect() {
+            const select = document.getElementById('report-member');
+            if (!select) return;
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">-- Select Member --</option>' +
+                members.map(member => `<option value="${member.id}">${member.name}</option>`).join('');
+            if (members.some(member => String(member.id) === currentValue)) select.value = currentValue;
+        }
+
+        function updateMemberSelect() {
+            const selects = [document.getElementById('income-member'), document.getElementById('loan-member')];
+            
+            selects.forEach(select => {
+                if (!select) return;
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">-- Select Member --</option>';
+                
+                if (members.length === 0) {
+                    const option = document.createElement('option');
+                    option.disabled = true;
+                    option.textContent = 'No members available';
+                    select.appendChild(option);
+                } else {
+                    members.forEach(m => {
+                        const option = document.createElement('option');
+                        option.value = m.id;
+                        option.textContent = `${m.name} (Pending: ₹${m.pending})`;
+                        select.appendChild(option);
+                    });
+                }
+                
+                if (currentValue && members.find(m => m.id == currentValue)) {
+                    select.value = currentValue;
+                }
+            });
+            
+            // Show warning if no members
+            const noMembersMsg = document.getElementById('no-members-msg');
+            const noMembersLoanMsg = document.getElementById('no-members-loan-msg');
+            if (noMembersMsg) {
+                if (members.length === 0) noMembersMsg.classList.remove('hidden');
+                else noMembersMsg.classList.add('hidden');
+            }
+            if (noMembersLoanMsg) {
+                if (members.length === 0) noMembersLoanMsg.classList.remove('hidden');
+                else noMembersLoanMsg.classList.add('hidden');
+            }
+        }
+
+        function updateLoanSelect() {
+            const select = document.getElementById('repayment-loan');
+            if (!select) return;
+            
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">-- Select Active Loan --</option>';
+            
+            const activeLoans = loans.filter(l => l.status === 'active');
+            
+            if (activeLoans.length === 0) {
+                const option = document.createElement('option');
+                option.disabled = true;
+                option.textContent = 'No active loans';
+                select.appendChild(option);
+                document.getElementById('no-loans-msg').classList.remove('hidden');
+            } else {
+                document.getElementById('no-loans-msg').classList.add('hidden');
+                activeLoans.forEach(loan => {
+                    const member = members.find(m => m.id === loan.memberId);
+                    const option = document.createElement('option');
+                    option.value = loan.id;
+                    option.textContent = `Loan #${loan.id} - ${member ? member.name : 'Unknown'} (Remaining: ₹${loan.amount - loan.repaid})`;
+                    select.appendChild(option);
+                });
+            }
+            
+            // Add change listener to show loan details
+            select.onchange = function() {
+                const selectedLoan = loans.find(l => l.id == this.value);
+                const detailsDiv = document.getElementById('loan-details-display');
+                if (selectedLoan) {
+                    const member = members.find(m => m.id === selectedLoan.memberId);
+                    document.getElementById('loan-member-name').textContent = member ? member.name : 'Unknown';
+                    document.getElementById('loan-total-amount').textContent = formatCurrency(selectedLoan.amount);
+                    document.getElementById('loan-remaining').textContent = formatCurrency(selectedLoan.amount - selectedLoan.repaid);
+                    detailsDiv.classList.remove('hidden');
+                } else {
+                    detailsDiv.classList.add('hidden');
+                }
+            };
+        }
+
+        function updateExpenseDropdowns() {
+            const benSelect = document.getElementById('expense-beneficiary');
+            const itemSelect = document.getElementById('expense-item');
+            
+            if (benSelect) {
+                benSelect.i

@@ -1,0 +1,192 @@
+       <p class="text-lg">Select a member to view their contribution statement.</p>
+                        </div>`;
+                } else {
+                    const contributionTransactions = transactions
+                        .filter(t => String(t.memberId) === String(member.id) && t.type === 'income' && !t.loanId && t.date >= from && t.date <= to)
+                        .sort((a, b) => new Date(a.date) - new Date(b.date));
+                    const periodTotal = contributionTransactions.reduce((sum, t) => sum + t.amount, 0);
+                    html = `
+                        <div class="space-y-6">
+                            <div class="border-b pb-4">
+                                <h3 class="text-2xl font-bold text-gray-800">${member.name} — Contribution Statement</h3>
+                                <p class="text-gray-600">${formatDate(from)} - ${formatDate(to)}</p>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-center">
+                                <div class="bg-blue-50 p-4 rounded-xl"><p class="text-sm text-gray-600">Monthly commitment</p><p class="text-xl font-bold text-blue-600">${formatCurrency(member.commitment)}</p></div>
+                                <div class="bg-green-50 p-4 rounded-xl"><p class="text-sm text-gray-600">Contributed in period</p><p class="text-xl font-bold text-green-600">${formatCurrency(periodTotal)}</p></div>
+                                <div class="bg-purple-50 p-4 rounded-xl"><p class="text-sm text-gray-600">Total contributed</p><p class="text-xl font-bold text-purple-600">${formatCurrency(member.contributed)}</p></div>
+                                <div class="bg-orange-50 p-4 rounded-xl"><p class="text-sm text-gray-600">Pending / advance</p><p class="text-xl font-bold ${member.pending > 0 ? 'text-orange-600' : member.pending < 0 ? 'text-blue-600' : 'text-gray-600'}">${formatCurrency(member.pending)}</p></div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead><tr class="border-b-2 border-gray-200 bg-gray-50"><th class="py-2 px-4">Date</th><th class="py-2 px-4">Description</th><th class="py-2 px-4">Account</th><th class="py-2 px-4">Payment mode</th><th class="py-2 px-4 text-right">Contribution</th></tr></thead>
+                                    <tbody>${contributionTransactions.length ? contributionTransactions.map(t => `<tr class="border-b border-gray-100"><td class="py-2 px-4">${formatDate(t.date)}</td><td class="py-2 px-4">${t.description}</td><td class="py-2 px-4">${getAccountLabel(t.account)}</td><td class="py-2 px-4">${t.paymentMode || '-'}</td><td class="py-2 px-4 text-right font-bold text-green-600">${formatCurrency(t.amount)}</td></tr>`).join('') : '<tr><td colspan="5" class="py-8 text-center text-gray-500">No contributions recorded in this period.</td></tr>'}</tbody>
+                                </table>
+                            </div>
+                        </div>`;
+                }
+            } else if (type === 'member') {
+                html = `
+                    <h3 class="text-xl font-bold mb-4">Member Contribution Report</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b-2 border-gray-200">
+                                    <th class="py-2">Member</th>
+                                    <th class="py-2 text-right">Monthly Commitment</th>
+                                    <th class="py-2 text-right">Total Contributed</th>
+                                    <th class="py-2 text-right">Pending/Advance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${members.map(m => `
+                                    <tr class="border-b border-gray-100">
+                                        <td class="py-2 font-medium">${m.name}</td>
+                                        <td class="py-2 text-right text-blue-600">${formatCurrency(m.commitment)}</td>
+                                        <td class="py-2 text-right text-green-600">${formatCurrency(m.contributed)}</td>
+                                        <td class="py-2 text-right ${m.pending > 0 ? 'text-orange-600' : m.pending < 0 ? 'text-blue-600' : 'text-gray-400'}">
+                                            ${m.pending !== 0 ? formatCurrency(m.pending) : '-'}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else if (type === 'account') {
+                const accounts = ['nre', 'nro', 'cash'];
+                let accountHtml = '';
+                
+                accounts.forEach(acc => {
+                    if (accountFilter !== 'all' && accountFilter !== acc) return;
+                    
+                    const accTrans = filtered.filter(t => t.account === acc);
+                    const accIncome = accTrans.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                    const accExpense = accTrans.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                    const opening = settings.openingBalance[acc];
+                    const closing = opening + accIncome - accExpense;
+                    
+                    accountHtml += `
+                        <div class="mb-8 border-b pb-6 last:border-0">
+                            <h4 class="text-lg font-bold mb-3 ${acc === 'nre' ? 'text-blue-600' : acc === 'nro' ? 'text-purple-600' : 'text-green-600'}">
+                                ${getAccountLabel(acc)} Statement
+                            </h4>
+                            <div class="grid grid-cols-3 gap-4 mb-4 text-sm">
+                                <div class="bg-gray-50 p-3 rounded">
+                                    <span class="text-gray-600">Opening:</span>
+                                    <span class="font-bold ml-2">${formatCurrency(opening)}</span>
+                                </div>
+                                <div class="bg-green-50 p-3 rounded">
+                                    <span class="text-gray-600">Income:</span>
+                                    <span class="font-bold ml-2 text-green-600">${formatCurrency(accIncome)}</span>
+                                </div>
+                                <div class="bg-red-50 p-3 rounded">
+                                    <span class="text-gray-600">Expense:</span>
+                                    <span class="font-bold ml-2 text-red-600">${formatCurrency(accExpense)}</span>
+                                </div>
+                            </div>
+                            <div class="bg-blue-50 p-3 rounded mb-4">
+                                <span class="text-gray-600">Closing Balance:</span>
+                                <span class="font-bold ml-2 text-blue-700 text-lg">${formatCurrency(closing)}</span>
+                            </div>
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="py-2 px-2">Date</th>
+                                        <th class="py-2 px-2">Description</th>
+                                        <th class="py-2 px-2 text-right">Income</th>
+                                        <th class="py-2 px-2 text-right">Expense</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${accTrans.sort((a, b) => new Date(a.date) - new Date(b.date)).map(t => `
+                                        <tr class="border-b border-gray-100">
+                                            <td class="py-2 px-2">${t.date}</td>
+                                            <td class="py-2 px-2">${t.description}</td>
+                                            <td class="py-2 px-2 text-right text-green-600">${t.type === 'income' ? formatCurrency(t.amount) : '-'}</td>
+                                            <td class="py-2 px-2 text-right text-red-600">${t.type === 'expense' ? formatCurrency(t.amount) : '-'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                });
+                
+                html = `<div class="space-y-4">${accountHtml}</div>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function exportReport() {
+            const from = document.getElementById('report-from').value;
+            const to = document.getElementById('report-to').value;
+            
+            let csv = 'Date,Description,Category,Type,Amount,Account,Member,Payment Mode,Beneficiary,Loan ID\n';
+            const filtered = transactions.filter(t => t.date >= from && t.date <= to);
+            filtered.forEach(t => {
+                const member = t.memberId ? members.find(m => m.id === t.memberId)?.name : '';
+                csv += `${t.date},"${t.description}",${t.category},${t.type},${t.amount},${t.account || 'cash'},${member},${t.paymentMode || ''},${t.beneficiary || ''},${t.loanId || ''}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `yck-charity-report-${from}-to-${to}.csv`;
+            a.click();
+            showToast('Report exported successfully', 'success');
+        }
+
+        // Utilities
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-IN', { 
+                style: 'currency', 
+                currency: 'INR',
+                maximumFractionDigits: 2
+            }).format(amount);
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-IN', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+
+        function getAccountLabel(account) {
+            const labels = { nre: 'NRE Account', nro: 'NRO Account', cash: 'Cash' };
+            return labels[account] || account || 'Cash';
+        }
+
+        // Event Listeners
+        document.getElementById('member-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeMemberModal();
+        });
+
+        document.getElementById('loan-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeLoanModal();
+        });
+
+        const dropZone = document.querySelector('#section-backup .border-dashed');
+        if (dropZone) {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-purple-500', 'bg-purple-50');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-purple-500', 'bg-purple-50');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-purple-500', 'bg-purple-50');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    document.getElementById('restore-file').files = files;
+                    importData(document.getElementById('restore-file'));
+                }
+            });
+        }
+     

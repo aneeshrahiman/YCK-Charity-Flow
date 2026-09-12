@@ -1,0 +1,239 @@
+nnerHTML = '<option value="">Select Beneficiary</option>' +
+                    settings.beneficiaries.map(b => `<option value="${b}">${b}</option>`).join('') +
+                    '<option value="other">+ Add New</option>';
+            }
+            
+            if (itemSelect) {
+                itemSelect.innerHTML = '<option value="">Select Item</option>' +
+                    settings.expenseCategories.map(c => `<option value="${c}">${c}</option>`).join('') +
+                    '<option value="other">+ Add New</option>';
+            }
+        }
+
+        // Dashboard
+        function updateDashboard() {
+            // Calculate account balances
+            const accountBalances = {
+                nre: settings.openingBalance.nre,
+                nro: settings.openingBalance.nro,
+                cash: settings.openingBalance.cash
+            };
+
+            transactions.forEach(t => {
+                if (t.type === 'transfer') {
+                    accountBalances[t.account] -= t.amount;
+                    accountBalances[t.toAccount] += t.amount;
+                } else if (t.account) {
+                    if (t.type === 'income') {
+                        accountBalances[t.account] += t.amount;
+                    } else {
+                        accountBalances[t.account] -= t.amount;
+                    }
+                }
+            });
+
+            const totalOpening = settings.openingBalance.nre + settings.openingBalance.nro + settings.openingBalance.cash;
+            const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+            const expenses = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+            const net = totalOpening + income - expenses;
+            const pendingTotal = members.reduce((sum, m) => Math.max(0, m.pending), 0);
+            const pendingCount = members.filter(m => m.pending > 0).length;
+
+            // Calculate loan stats
+            const activeLoans = loans.filter(l => l.status === 'active');
+            const totalLoaned = loans.reduce((sum, l) => sum + l.amount, 0);
+            const totalRecovered = loans.reduce((sum, l) => sum + l.repaid, 0);
+
+            // Update account cards
+            document.getElementById('nre-balance').textContent = formatCurrency(accountBalances.nre);
+            document.getElementById('nro-balance').textContent = formatCurrency(accountBalances.nro);
+            document.getElementById('cash-balance').textContent = formatCurrency(accountBalances.cash);
+            
+            // Update sidebar
+            document.getElementById('sidebar-nre').textContent = formatCurrency(accountBalances.nre);
+            document.getElementById('sidebar-nro').textContent = formatCurrency(accountBalances.nro);
+            document.getElementById('sidebar-cash').textContent = formatCurrency(accountBalances.cash);
+
+            // Update main stats
+            document.getElementById('total-income').textContent = formatCurrency(income);
+            document.getElementById('total-expenses').textContent = formatCurrency(expenses);
+            document.getElementById('net-balance').textContent = formatCurrency(net);
+            document.getElementById('sidebar-balance').textContent = formatCurrency(net);
+            document.getElementById('pending-dues').textContent = formatCurrency(pendingTotal);
+            document.getElementById('pending-count').textContent = `${pendingCount} members`;
+            
+            // Update opening balance display
+            const totalOpeningDisplay = settings.openingBalance.nre + settings.openingBalance.nro + settings.openingBalance.cash;
+            document.getElementById('opening-balance-display').textContent = formatCurrency(totalOpeningDisplay);
+            document.getElementById('financial-year-display').textContent = `FY ${settings.financialYear}`;
+
+            // Update loan summary
+            document.getElementById('active-loans-count').textContent = activeLoans.length;
+            document.getElementById('total-loans-amount').textContent = formatCurrency(totalLoaned);
+            document.getElementById('total-recovered').textContent = formatCurrency(totalRecovered);
+
+            // Calculate trends
+            const thisMonth = new Date().toISOString().slice(0, 7);
+            const lastMonth = new Date(Date.now() - 2592000000).toISOString().slice(0, 7);
+            
+            const thisMonthIncome = transactions.filter(t => t.date.startsWith(thisMonth) && t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+            const lastMonthIncome = transactions.filter(t => t.date.startsWith(lastMonth) && t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+            const incomeTrend = lastMonthIncome > 0 ? ((thisMonthIncome - lastMonthIncome) / lastMonthIncome * 100).toFixed(1) : 0;
+            
+            document.getElementById('income-trend').innerHTML = `<i class="fas fa-chart-line mr-1"></i>${incomeTrend >= 0 ? '+' : ''}${incomeTrend}% this month`;
+
+            updateRecentTransactions();
+        }
+
+        function updateRecentTransactions() {
+            const tbody = document.getElementById('recent-transactions-body');
+            const recent = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+            
+            tbody.innerHTML = recent.map(t => `
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-4 py-3 text-sm text-gray-600">${formatDate(t.date)}</td>
+                    <td class="px-4 py-3 font-medium text-gray-800">${t.description}</td>
+                    <td class="px-4 py-3"><span class="px-2 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600">${t.category}</span></td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${t.type === 'transfer' ? `${getAccountLabel(t.account)} → ${getAccountLabel(t.toAccount)}` : getAccountLabel(t.account)}</td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${t.type === 'income' ? 'bg-green-100 text-green-800' : t.type === 'transfer' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}">
+                            ${t.type === 'income' ? 'Income' : t.type === 'transfer' ? 'Transfer' : 'Expense'}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-right font-bold ${t.type === 'income' ? 'text-green-600' : t.type === 'transfer' ? 'text-blue-600' : 'text-red-600'}">
+                        ${t.type === 'transfer' ? '↔' : t.type === 'income' ? '+' : '-'}${formatCurrency(t.amount)}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Charts
+        function updateCharts() {
+            if (trendChart) {
+                trendChart.destroy();
+                trendChart = null;
+            }
+            if (expenseChart) {
+                expenseChart.destroy();
+                expenseChart = null;
+            }
+
+            const ctxTrend = document.getElementById('trendChart');
+            const ctxExpense = document.getElementById('expenseChart');
+            
+            if (!ctxTrend || !ctxExpense) return;
+
+            const monthlyData = {};
+            transactions.forEach(t => {
+                const month = t.date.substring(0, 7);
+                if (!monthlyData[month]) monthlyData[month] = { income: 0, expense: 0 };
+                monthlyData[month][t.type] += t.amount;
+            });
+
+            const months = Object.keys(monthlyData).sort();
+            const incomeData = months.map(m => monthlyData[m].income);
+            const expenseData = months.map(m => monthlyData[m].expense);
+
+            trendChart = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: months.map(m => {
+                        const [year, month] = m.split('-');
+                        return `${month}/${year}`;
+                    }),
+                    datasets: [{
+                        label: 'Income',
+                        data: incomeData,
+                        borderColor: '#10B981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: 'Expenses',
+                        data: expenseData,
+                        borderColor: '#EF4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } },
+                    scales: { y: { beginAtZero: true, ticks: { callback: v => '₹' + v } } }
+                }
+            });
+
+            const expenseByCategory = {};
+            transactions.filter(t => t.type === 'expense').forEach(t => {
+                expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount;
+            });
+
+            expenseChart = new Chart(ctxExpense, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(expenseByCategory),
+                    datasets: [{
+                        data: Object.values(expenseByCategory),
+                        backgroundColor: ['#EF4444', '#F59E0B', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+        }
+
+        // Transactions
+        function addTransaction(e) {
+            e.preventDefault();
+            const type = document.querySelector('input[name="trans-type"]:checked').value;
+            const amount = parseFloat(document.getElementById('trans-amount').value);
+            const date = document.getElementById('trans-date').value;
+            const account = document.getElementById('trans-account').value;
+            
+            let transaction = {
+                id: Date.now(),
+                date: date,
+                type: type,
+                amount: amount,
+                account: account
+            };
+
+            if (type === 'income') {
+                const source = document.getElementById('income-source').value;
+                const customSource = document.getElementById('custom-income-source').value;
+                const finalSource = source === 'other' ? customSource : source;
+                
+                if (source === 'Loan Repayment') {
+                    // Handle loan repayment
+                    const loanId = document.getElementById('repayment-loan').value;
+                    if (!loanId) {
+                        showToast('Please select a loan for repayment', 'error');
+                        return;
+                    }
+                    
+                    const loan = loans.find(l => l.id == loanId);
+                    if (!loan) {
+                        showToast('Loan not found', 'error');
+                        return;
+                    }
+                    
+                    const remaining = loan.amount - loan.repaid;
+                    if (amount > remaining) {
+                        showToast(`Repayment amount exceeds remaining loan balance (${formatCurrency(remaining)})`, 'error');
+                        return;
+                    }
+                    
+                    // Update loan
+                    loan.repaid += amount;
+                    loan.repayments.push({
+                        date: date,
+                        amount: amount,
+                        transactionId: transaction.id
+                    });
+                    
+                    // Check if loan is fully repaid

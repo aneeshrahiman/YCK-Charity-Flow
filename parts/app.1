@@ -1,0 +1,278 @@
+
+        // Data Store - Updated with loans
+        let transactions = [];
+        let members = [];
+        let loans = []; // New: Loan data
+        let settings = {
+            financialYear: '2024-25',
+            openingBalance: { nre: 0, nro: 0, cash: 0 },
+            expenseCategories: ['Operations', 'Programs', 'Utilities', 'Salaries', 'Marketing', 'Events', 'Other', 'Loans Given'],
+            beneficiaries: ['General', 'Office', 'Charity Works', 'Maintenance', 'Member Loans']
+        };
+        
+        const STORAGE_KEY = 'yck_charity_data_v4'; // Updated version for migration
+        let trendChart, expenseChart;
+        let editingMemberId = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+            document.getElementById('trans-date').valueAsDate = new Date();
+            document.getElementById('loan-date').valueAsDate = new Date();
+            document.getElementById('report-from').value = new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0];
+            document.getElementById('report-to').value = new Date().toISOString().split('T')[0];
+            
+            toggleTransactionForm();
+            updateMemberSelect();
+            updateLoanSelect(); // New
+            updateExpenseDropdowns();
+            updateDashboard();
+            renderTransactions();
+            renderMembers();
+            renderLoans(); // New
+            renderSettings();
+            updateBackupInfo();
+            
+            setInterval(autoSave, 30000);
+        });
+
+        // Data Persistence with Migration
+        function saveData() {
+            const data = {
+                transactions: transactions,
+                members: members,
+                loans: loans, // Include loans
+                settings: settings,
+                lastSaved: new Date().toISOString(),
+                version: '4.0'
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            updateBackupInfo();
+        }
+
+        function autoSave() {
+            saveData();
+        }
+
+        function forceSave() {
+            saveData();
+            showToast('Data saved successfully', 'success');
+        }
+
+        function loadData() {
+            // Try to load from new storage key first
+            let saved = localStorage.getItem(STORAGE_KEY);
+            
+            // If not found, try to migrate from old versions
+            if (!saved) {
+                const oldKeys = ['yck_charity_data', 'yck_charity_data_v2', 'yck_charity_data_v3'];
+                for (const key of oldKeys) {
+                    const oldData = localStorage.getItem(key);
+                    if (oldData) {
+                        saved = oldData;
+                        // Migrate and save to new key
+                        migrateData(JSON.parse(oldData));
+                        showToast('Data migrated successfully', 'success');
+                        return;
+                    }
+                }
+            }
+            
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    migrateData(data);
+                } catch (e) {
+                    console.error('Error loading data:', e);
+                    loadDemoData();
+                }
+            } else {
+                loadDemoData();
+            }
+        }
+
+        function migrateData(data) {
+            // Migrate transactions
+            transactions = data.transactions || [];
+            
+            // Migrate members
+            members = data.members || [];
+            
+            // Migrate loans (new field) - ensure each loan has required fields
+            loans = (data.loans || []).map(loan => ({
+                id: loan.id || Date.now() + Math.random(),
+                memberId: loan.memberId,
+                amount: parseFloat(loan.amount) || 0,
+                repaid: parseFloat(loan.repaid) || 0,
+                date: loan.date || new Date().toISOString().split('T')[0],
+                purpose: loan.purpose || '',
+                account: loan.account || 'cash',
+                isExisting: Boolean(loan.isExisting),
+                status: loan.status || 'active', // active, closed
+                closedDate: loan.closedDate || null,
+                repayments: loan.repayments || [] // Track individual repayments
+            }));
+            
+            // Migrate settings with defaults for new fields
+            if (data.settings) {
+                if (typeof data.settings.openingBalance === 'number') {
+                    settings = {
+                        financialYear: data.settings.financialYear || '2024-25',
+                        openingBalance: {
+                            nre: data.settings.openingBalance || 0,
+                            nro: 0,
+                            cash: 0
+                        },
+                        expenseCategories: data.settings.expenseCategories || settings.expenseCategories,
+                        beneficiaries: data.settings.beneficiaries || settings.beneficiaries
+                    };
+                } else {
+                    settings = {
+                        financialYear: data.settings.financialYear || '2024-25',
+                        openingBalance: data.settings.openingBalance || { nre: 0, nro: 0, cash: 0 },
+                        expenseCategories: data.settings.expenseCategories || settings.expenseCategories,
+                        beneficiaries: data.settings.beneficiaries || settings.beneficiaries
+                    };
+                }
+            }
+            
+            // Ensure new categories exist
+            if (!settings.expenseCategories.includes('Loans Given')) {
+                settings.expenseCategories.push('Loans Given');
+            }
+            if (!settings.beneficiaries.includes('Member Loans')) {
+                settings.beneficiaries.push('Member Loans');
+            }
+            
+            // Save migrated data
+            saveData();
+        }
+
+        function loadDemoData() {
+            const today = new Date();
+            transactions = [
+                { id: 1, date: today.toISOString().split('T')[0], description: 'Monthly Fund - Rajesh Kumar', category: 'Monthly Fund', type: 'income', amount: 5000, memberId: 1, account: 'nre' },
+                { id: 2, date: new Date(today - 86400000).toISOString().split('T')[0], description: 'Office Rent', category: 'Operations', type: 'expense', amount: 15000, account: 'nro' },
+                { id: 3, date: new Date(today - 172800000).toISOString().split('T')[0], description: 'Ramadan Fund - Priya Sharma', category: 'Ramadan Fund', type: 'income', amount: 10000, memberId: 2, account: 'cash' }
+            ];
+
+            members = [
+                { id: 1, name: 'Rajesh Kumar', joinDate: '2023-06-15', commitment: 5000, contributed: 25000, pending: 0 },
+                { id: 2, name: 'Priya Sharma', joinDate: '2023-07-20', commitment: 3000, contributed: 15000, pending: 3000 },
+                { id: 3, name: 'Amit Patel', joinDate: '2023-08-10', commitment: 5000, contributed: 30000, pending: -5000 }
+            ];
+
+            // Demo loans
+            loans = [
+                {
+                    id: 101,
+                    memberId: 2,
+                    amount: 10000,
+                    repaid: 3000,
+                    date: '2024-01-15',
+                    purpose: 'Medical Emergency',
+                    account: 'cash',
+                    status: 'active',
+                    repayments: [
+                        { date: '2024-02-15', amount: 2000 },
+                        { date: '2024-03-15', amount: 1000 }
+                    ]
+                }
+            ];
+
+            settings.openingBalance = { nre: 15000, nro: 8000, cash: 2000 };
+            settings.financialYear = '2024-25';
+            
+            saveData();
+            updateDashboard();
+            renderTransactions();
+            renderMembers();
+            renderLoans();
+            renderSettings();
+            showToast('Demo data loaded', 'info');
+        }
+
+        function clearAllData() {
+            if (confirm('⚠️ WARNING: This will permanently delete ALL data including loans. This cannot be undone. Are you sure?')) {
+                if (confirm('Final confirmation: Delete everything?')) {
+                    transactions = [];
+                    members = [];
+                    loans = [];
+                    settings = {
+                        financialYear: '2024-25',
+                        openingBalance: { nre: 0, nro: 0, cash: 0 },
+                        expenseCategories: ['Operations', 'Programs', 'Utilities', 'Salaries', 'Marketing', 'Events', 'Other', 'Loans Given'],
+                        beneficiaries: ['General', 'Office', 'Charity Works', 'Maintenance', 'Member Loans']
+                    };
+                    localStorage.removeItem(STORAGE_KEY);
+                    // Clear old keys too
+                    ['yck_charity_data', 'yck_charity_data_v2', 'yck_charity_data_v3'].forEach(key => {
+                        localStorage.removeItem(key);
+                    });
+                    updateDashboard();
+                    renderTransactions();
+                    renderMembers();
+                    renderLoans();
+                    renderSettings();
+                    updateBackupInfo();
+                    showToast('All data cleared', 'success');
+                }
+            }
+        }
+
+        // Export/Import
+        function exportData() {
+            const data = {
+                transactions: transactions,
+                members: members,
+                loans: loans,
+                settings: settings,
+                exportDate: new Date().toISOString(),
+                version: '4.0',
+                app: 'YCK Charity Flow'
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `yck-charity-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Backup downloaded successfully', 'success');
+        }
+
+        function exportCSV() {
+            let csv = 'ID,Date,Description,Category,Type,Amount,Account,Member,Payment Mode,Beneficiary,Loan ID\n';
+            transactions.forEach(t => {
+                const member = t.memberId ? members.find(m => m.id === t.memberId)?.name : '';
+                const loanId = t.loanId || '';
+                csv += `${t.id},${t.date},"${t.description}",${t.category},${t.type},${t.amount},${t.account || 'cash'},${member},${t.paymentMode || ''},${t.beneficiary || ''},${loanId}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `yck-charity-transactions-${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('CSV exported successfully', 'success');
+        }
+
+        function importData(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (confirm(`Restore backup from ${new Date(data.exportDate).toLocaleString()}? This will replace current data.`)) {
+                        migrateData(data);
+                        updateDashboard();
+                        renderTransactions();

@@ -1,0 +1,254 @@
+Id('loan-purpose').value;
+            const date = document.getElementById('loan-date').value;
+            const account = document.getElementById('loan-account').value;
+            const isExisting = document.getElementById('loan-entry-type').value === 'existing';
+            
+            if (!memberId || !amount || amount <= 0) {
+                showToast('Please fill all required fields', 'error');
+                return;
+            }
+            
+            // Create loan record
+            const loan = {
+                id: Date.now(),
+                memberId: memberId,
+                amount: amount,
+                repaid: 0,
+                date: date,
+                purpose: purpose || (isExisting ? 'Existing loan balance' : 'Emergency Loan'),
+                account: account,
+                isExisting: isExisting,
+                status: 'active',
+                closedDate: null,
+                repayments: []
+            };
+            
+            loans.push(loan);
+            
+            // An existing loan is an opening balance, not a new cash outflow.
+            // Only newly issued loans create an expense and affect account balances.
+            if (!isExisting) {
+                const member = members.find(m => m.id === memberId);
+                transactions.push({
+                    id: Date.now() + 1,
+                    date: date,
+                    description: `Loan issued to ${member ? member.name : 'Unknown'} - ${purpose || 'Emergency'}`,
+                    category: 'Loans Given',
+                    type: 'expense',
+                    amount: amount,
+                    beneficiary: 'Member Loans',
+                    account: account,
+                    loanId: loan.id
+                });
+            }
+            
+            saveData();
+            closeLoanModal();
+            renderLoans();
+            updateDashboard();
+            renderTransactions();
+            updateLoanSelect();
+            showToast(isExisting ? 'Existing loan balance added without changing account balances' : 'Loan issued successfully', 'success');
+        }
+
+        function renderLoans() {
+            // Update stats
+            const activeLoans = loans.filter(l => l.status === 'active');
+            const closedLoans = loans.filter(l => l.status === 'closed');
+            const totalLoaned = loans.reduce((sum, l) => sum + l.amount, 0);
+            const totalRecovered = loans.reduce((sum, l) => sum + l.repaid, 0);
+            
+            document.getElementById('loan-stats-active').textContent = activeLoans.length;
+            document.getElementById('loan-stats-total').textContent = formatCurrency(totalLoaned);
+            document.getElementById('loan-stats-recovered').textContent = formatCurrency(totalRecovered);
+            document.getElementById('loan-stats-outstanding').textContent = formatCurrency(totalLoaned - totalRecovered);
+            
+            // Render active loans
+            const activeTbody = document.getElementById('active-loans-body');
+            activeTbody.innerHTML = activeLoans.map(loan => {
+                const member = members.find(m => m.id === loan.memberId);
+                const remaining = loan.amount - loan.repaid;
+                const progress = (loan.repaid / loan.amount) * 100;
+                
+                return `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-4 py-3 font-medium text-gray-800">#${loan.id}</td>
+                        <td class="px-4 py-3">${member ? member.name : 'Unknown'}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">${formatDate(loan.date)}${loan.isExisting ? '<span class="block text-xs text-blue-600">Opening balance</span>' : ''}</td>
+                        <td class="px-4 py-3 text-right font-medium">${formatCurrency(loan.amount)}</td>
+                        <td class="px-4 py-3 text-right text-green-600">${formatCurrency(loan.repaid)}</td>
+                        <td class="px-4 py-3 text-right text-red-600 font-bold">${formatCurrency(remaining)}</td>
+                        <td class="px-4 py-3">
+                            <div class="loan-progress">
+                                <div class="loan-progress-bar" style="width: ${progress}%"></div>
+                            </div>
+                            <span class="text-xs text-gray-500">${progress.toFixed(1)}%</span>
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="viewLoanDetails(${loan.id})" class="text-blue-600 hover:text-blue-800 mr-2" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button onclick="closeLoanEarly(${loan.id})" class="text-orange-600 hover:text-orange-800" title="Close Loan">
+                                <i class="fas fa-check-circle"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Render loan history
+            const historyTbody = document.getElementById('loan-history-body');
+            historyTbody.innerHTML = closedLoans.map(loan => {
+                const member = members.find(m => m.id === loan.memberId);
+                return `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-4 py-3 font-medium text-gray-800">#${loan.id}</td>
+                        <td class="px-4 py-3">${member ? member.name : 'Unknown'}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">${formatDate(loan.date)}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">${formatDate(loan.closedDate)}</td>
+                        <td class="px-4 py-3 text-right font-medium">${formatCurrency(loan.amount)}</td>
+                        <td class="px-4 py-3"><span class="loan-badge paid"><i class="fas fa-check mr-1"></i>Paid</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function viewLoanDetails(loanId) {
+            const loan = loans.find(l => l.id === loanId);
+            if (!loan) return;
+            
+            const member = members.find(m => m.id === loan.memberId);
+            const details = `
+Loan #${loan.id}
+Member: ${member ? member.name : 'Unknown'}
+Amount: ${formatCurrency(loan.amount)}
+Repaid: ${formatCurrency(loan.repaid)}
+Remaining: ${formatCurrency(loan.amount - loan.repaid)}
+Status: ${loan.status}
+Purpose: ${loan.purpose || 'N/A'}
+Date: ${formatDate(loan.date)}
+
+Repayment History:
+${loan.repayments.length > 0 ? loan.repayments.map(r => `- ${formatDate(r.date)}: ${formatCurrency(r.amount)}`).join('\n') : 'No repayments yet'}
+            `;
+            
+            alert(details);
+        }
+
+        function closeLoanEarly(loanId) {
+            const loan = loans.find(l => l.id === loanId);
+            if (!loan) return;
+            
+            const remaining = loan.amount - loan.repaid;
+            if (remaining > 0) {
+                if (!confirm(`This loan still has ${formatCurrency(remaining)} remaining. Are you sure you want to mark it as closed (forgiven)?`)) {
+                    return;
+                }
+            }
+            
+            loan.status = 'closed';
+            loan.closedDate = new Date().toISOString().split('T')[0];
+            saveData();
+            renderLoans();
+            updateDashboard();
+            showToast('Loan closed', 'success');
+        }
+
+        // Settings
+        function renderSettings() {
+            document.getElementById('financial-year').value = settings.financialYear;
+            document.getElementById('opening-nre').value = settings.openingBalance.nre;
+            document.getElementById('opening-nro').value = settings.openingBalance.nro;
+            document.getElementById('opening-cash').value = settings.openingBalance.cash;
+            
+            const catList = document.getElementById('expense-categories-list');
+            catList.innerHTML = settings.expenseCategories.map((cat, idx) => `
+                <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span>${cat}</span>
+                    <button onclick="removeExpenseCategory(${idx})" class="text-red-500 hover:text-red-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+            
+            const benList = document.getElementById('beneficiaries-list');
+            benList.innerHTML = settings.beneficiaries.map((ben, idx) => `
+                <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span>${ben}</span>
+                    <button onclick="removeBeneficiary(${idx})" class="text-red-500 hover:text-red-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function saveOpeningBalance(e) {
+            e.preventDefault();
+            settings.financialYear = document.getElementById('financial-year').value;
+            settings.openingBalance.nre = parseFloat(document.getElementById('opening-nre').value) || 0;
+            settings.openingBalance.nro = parseFloat(document.getElementById('opening-nro').value) || 0;
+            settings.openingBalance.cash = parseFloat(document.getElementById('opening-cash').value) || 0;
+            saveData();
+            updateDashboard();
+            showToast('Settings saved successfully', 'success');
+        }
+
+        function addExpenseCategory() {
+            const input = document.getElementById('new-expense-category');
+            const cat = input.value.trim();
+            if (cat && !settings.expenseCategories.includes(cat)) {
+                settings.expenseCategories.push(cat);
+                input.value = '';
+                saveData();
+                renderSettings();
+                showToast('Category added', 'success');
+            }
+        }
+
+        function removeExpenseCategory(idx) {
+            settings.expenseCategories.splice(idx, 1);
+            saveData();
+            renderSettings();
+        }
+
+        function addBeneficiary() {
+            const input = document.getElementById('new-beneficiary');
+            const ben = input.value.trim();
+            if (ben && !settings.beneficiaries.includes(ben)) {
+                settings.beneficiaries.push(ben);
+                input.value = '';
+                saveData();
+                renderSettings();
+                showToast('Beneficiary added', 'success');
+            }
+        }
+
+        function removeBeneficiary(idx) {
+            settings.beneficiaries.splice(idx, 1);
+            saveData();
+            renderSettings();
+        }
+
+        // Reports
+        function generateReport() {
+            const type = document.getElementById('report-type').value;
+            const from = document.getElementById('report-from').value;
+            const to = document.getElementById('report-to').value;
+            const accountFilter = document.getElementById('report-account').value;
+            const reportMemberId = document.getElementById('report-member').value;
+            const container = document.getElementById('report-content');
+
+            let html = '';
+            
+            let filtered = transactions.filter(t => t.date >= from && t.date <= to);
+            if (accountFilter !== 'all') {
+                filtered = filtered.filter(t => t.account === accountFilter);
+            }
+
+            if (type === 'summary') {
+                const income = filtered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                const expense = filtered.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                
+                html = `
+                    <div class="space-y-6">
+                        <div class="text-center border-b pb

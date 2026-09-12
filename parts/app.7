@@ -1,0 +1,181 @@
+-4">
+                            <h3 class="text-2xl font-bold text-gray-800">Financial Summary Report</h3>
+                            <p class="text-gray-600">${formatDate(from)} - ${formatDate(to)}</p>
+                            ${accountFilter !== 'all' ? `<p class="text-sm text-purple-600 mt-1">Account: ${getAccountLabel(accountFilter)}</p>` : ''}
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+                            <div class="p-4 bg-green-50 rounded-xl">
+                                <p class="text-sm text-gray-600 mb-1">Total Income</p>
+                                <p class="text-2xl font-bold text-green-600">${formatCurrency(income)}</p>
+                            </div>
+                            <div class="p-4 bg-red-50 rounded-xl">
+                                <p class="text-sm text-gray-600 mb-1">Total Expenses</p>
+                                <p class="text-2xl font-bold text-red-600">${formatCurrency(expense)}</p>
+                            </div>
+                            <div class="p-4 bg-blue-50 rounded-xl">
+                                <p class="text-sm text-gray-600 mb-1">Net Balance</p>
+                                <p class="text-2xl font-bold text-blue-600">${formatCurrency(income - expense)}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'income-only') {
+                const incomeTrans = filtered.filter(t => t.type === 'income').sort((a, b) => new Date(a.date) - new Date(b.date));
+                const totalIncome = incomeTrans.reduce((sum, t) => sum + t.amount, 0);
+                
+                html = `
+                    <h3 class="text-xl font-bold mb-4">Income Report (${formatDate(from)} - ${formatDate(to)})</h3>
+                    ${accountFilter !== 'all' ? `<p class="text-sm text-purple-600 mb-4">Account: ${getAccountLabel(accountFilter)}</p>` : ''}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b-2 border-gray-200 bg-green-50">
+                                    <th class="py-2 px-4">Date</th>
+                                    <th class="py-2 px-4">Description</th>
+                                    <th class="py-2 px-4">Category</th>
+                                    <th class="py-2 px-4">Account</th>
+                                    <th class="py-2 px-4 text-right">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${incomeTrans.map(t => `
+                                    <tr class="border-b border-gray-100">
+                                        <td class="py-2 px-4">${t.date}</td>
+                                        <td class="py-2 px-4">${t.description}</td>
+                                        <td class="py-2 px-4">${t.category}</td>
+                                        <td class="py-2 px-4">${getAccountLabel(t.account)}</td>
+                                        <td class="py-2 px-4 text-right text-green-600 font-bold">${formatCurrency(t.amount)}</td>
+                                    </tr>
+                                `).join('')}
+                                <tr class="bg-green-100 font-bold">
+                                    <td class="py-3 px-4" colspan="4">Total Income</td>
+                                    <td class="py-3 px-4 text-right text-green-700">${formatCurrency(totalIncome)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else if (type === 'expense-only') {
+                const expenseTrans = filtered.filter(t => t.type === 'expense').sort((a, b) => new Date(a.date) - new Date(b.date));
+                const totalExpense = expenseTrans.reduce((sum, t) => sum + t.amount, 0);
+                
+                html = `
+                    <h3 class="text-xl font-bold mb-4">Expense Report (${formatDate(from)} - ${formatDate(to)})</h3>
+                    ${accountFilter !== 'all' ? `<p class="text-sm text-purple-600 mb-4">Account: ${getAccountLabel(accountFilter)}</p>` : ''}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b-2 border-gray-200 bg-red-50">
+                                    <th class="py-2 px-4">Date</th>
+                                    <th class="py-2 px-4">Description</th>
+                                    <th class="py-2 px-4">Category</th>
+                                    <th class="py-2 px-4">Account</th>
+                                    <th class="py-2 px-4 text-right">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${expenseTrans.map(t => `
+                                    <tr class="border-b border-gray-100">
+                                        <td class="py-2 px-4">${t.date}</td>
+                                        <td class="py-2 px-4">${t.description}</td>
+                                        <td class="py-2 px-4">${t.category}</td>
+                                        <td class="py-2 px-4">${getAccountLabel(t.account)}</td>
+                                        <td class="py-2 px-4 text-right text-red-600 font-bold">${formatCurrency(t.amount)}</td>
+                                    </tr>
+                                `).join('')}
+                                <tr class="bg-red-100 font-bold">
+                                    <td class="py-3 px-4" colspan="4">Total Expenses</td>
+                                    <td class="py-3 px-4 text-right text-red-700">${formatCurrency(totalExpense)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else if (type === 'loans') {
+                const loanReport = loans.filter(l => l.date >= from && l.date <= to);
+                const totalLoaned = loanReport.reduce((sum, l) => sum + l.amount, 0);
+                const totalRecovered = loanReport.reduce((sum, l) => sum + l.repaid, 0);
+                
+                html = `
+                    <h3 class="text-xl font-bold mb-4">Loan Report (${formatDate(from)} - ${formatDate(to)})</h3>
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <div class="bg-orange-50 p-4 rounded-xl text-center">
+                            <p class="text-sm text-gray-600">Total Loaned</p>
+                            <p class="text-xl font-bold text-orange-600">${formatCurrency(totalLoaned)}</p>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-xl text-center">
+                            <p class="text-sm text-gray-600">Recovered</p>
+                            <p class="text-xl font-bold text-green-600">${formatCurrency(totalRecovered)}</p>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-xl text-center">
+                            <p class="text-sm text-gray-600">Outstanding</p>
+                            <p class="text-xl font-bold text-blue-600">${formatCurrency(totalLoaned - totalRecovered)}</p>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b-2 border-gray-200 bg-gray-50">
+                                    <th class="py-2 px-4">Loan ID</th>
+                                    <th class="py-2 px-4">Member</th>
+                                    <th class="py-2 px-4">Date</th>
+                                    <th class="py-2 px-4 text-right">Amount</th>
+                                    <th class="py-2 px-4 text-right">Repaid</th>
+                                    <th class="py-2 px-4">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${loanReport.map(l => {
+                                    const member = members.find(m => m.id === l.memberId);
+                                    return `
+                                        <tr class="border-b border-gray-100">
+                                            <td class="py-2 px-4">#${l.id}</td>
+                                            <td class="py-2 px-4">${member ? member.name : 'Unknown'}</td>
+                                            <td class="py-2 px-4">${formatDate(l.date)}</td>
+                                            <td class="py-2 px-4 text-right">${formatCurrency(l.amount)}</td>
+                                            <td class="py-2 px-4 text-right text-green-600">${formatCurrency(l.repaid)}</td>
+                                            <td class="py-2 px-4"><span class="loan-badge ${l.status}">${l.status}</span></td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else if (type === 'detailed') {
+                html = `
+                    <h3 class="text-xl font-bold mb-4">Detailed Transaction Report</h3>
+                    ${accountFilter !== 'all' ? `<p class="text-sm text-purple-600 mb-4">Account: ${getAccountLabel(accountFilter)}</p>` : ''}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b-2 border-gray-200">
+                                    <th class="py-2">Date</th>
+                                    <th class="py-2">Description</th>
+                                    <th class="py-2">Category</th>
+                                    <th class="py-2">Account</th>
+                                    <th class="py-2 text-right">Income</th>
+                                    <th class="py-2 text-right">Expense</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${filtered.sort((a, b) => new Date(a.date) - new Date(b.date)).map(t => `
+                                    <tr class="border-b border-gray-100">
+                                        <td class="py-2">${t.date}</td>
+                                        <td class="py-2">${t.description}</td>
+                                        <td class="py-2">${t.category}</td>
+                                        <td class="py-2">${getAccountLabel(t.account)}</td>
+                                        <td class="py-2 text-right text-green-600">${t.type === 'income' ? formatCurrency(t.amount) : '-'}</td>
+                                        <td class="py-2 text-right text-red-600">${t.type === 'expense' ? formatCurrency(t.amount) : '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else if (type === 'individual-member') {
+                const member = members.find(m => String(m.id) === String(reportMemberId));
+                if (!member) {
+                    html = `
+                        <div class="text-center text-gray-500 py-12">
+                            <i class="fas fa-user-chart text-5xl mb-4 text-purple-300"></i>

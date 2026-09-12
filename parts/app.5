@@ -1,0 +1,248 @@
+content = document.getElementById('member-modal-content');
+            const title = document.getElementById('member-modal-title');
+            
+            editingMemberId = memberId;
+            
+            if (memberId) {
+                const member = members.find(m => m.id === memberId);
+                title.textContent = 'Edit Member';
+                document.getElementById('member-id').value = member.id;
+                document.getElementById('member-name').value = member.name;
+                document.getElementById('member-commitment').value = member.commitment;
+                document.getElementById('member-balance').value = member.pending;
+                document.getElementById('member-contributed').value = member.contributed;
+            } else {
+                title.textContent = 'Add New Member';
+                document.getElementById('member-form').reset();
+                document.getElementById('member-id').value = '';
+            }
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function closeMemberModal() {
+            const modal = document.getElementById('member-modal');
+            const content = document.getElementById('member-modal-content');
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                document.getElementById('member-form').reset();
+                editingMemberId = null;
+            }, 300);
+        }
+
+        function saveMember(e) {
+            e.preventDefault();
+            
+            const memberData = {
+                name: document.getElementById('member-name').value,
+                commitment: parseFloat(document.getElementById('member-commitment').value) || 0,
+                pending: parseFloat(document.getElementById('member-balance').value) || 0,
+                contributed: parseFloat(document.getElementById('member-contributed').value) || 0
+            };
+
+            if (editingMemberId) {
+                const member = members.find(m => m.id === editingMemberId);
+                Object.assign(member, memberData);
+                showToast('Member updated successfully', 'success');
+            } else {
+                members.push({
+                    id: Date.now(),
+                    joinDate: new Date().toISOString().split('T')[0],
+                    ...memberData
+                });
+                showToast('Member added successfully', 'success');
+            }
+            
+            closeMemberModal();
+            saveData();
+            renderMembers();
+            updateDashboard();
+            updateMemberSelect();
+        }
+
+        function processMonthlyCommitments() {
+            if (members.length === 0) {
+                showToast('No members to process', 'error');
+                return;
+            }
+            
+            const total = members.reduce((sum, m) => sum + m.commitment, 0);
+            if (confirm(`Add monthly commitments totaling ${formatCurrency(total)} to all members' pending balance?`)) {
+                members.forEach(m => m.pending += m.commitment);
+                saveData();
+                renderMembers();
+                updateDashboard();
+                showToast('Monthly commitments added', 'success');
+            }
+        }
+
+        function renderMembers(filter = 'all') {
+            const tbody = document.getElementById('members-body');
+            
+            let filtered = members;
+            if (filter === 'pending') filtered = members.filter(m => m.pending > 0);
+            if (filter === 'cleared') filtered = members.filter(m => m.pending <= 0);
+            if (filter === 'with-loans') {
+                const memberIdsWithLoans = [...new Set(loans.filter(l => l.status === 'active').map(l => l.memberId))];
+                filtered = members.filter(m => memberIdsWithLoans.includes(m.id));
+            }
+
+            const totalCommitment = members.reduce((sum, m) => sum + m.commitment, 0);
+            const totalPending = members.reduce((sum, m) => sum + Math.max(0, m.pending), 0);
+
+            document.getElementById('total-members').textContent = members.length;
+            document.getElementById('total-commitment').textContent = formatCurrency(totalCommitment);
+            document.getElementById('total-outstanding').textContent = formatCurrency(totalPending);
+
+            tbody.innerHTML = filtered.map(m => {
+                const activeLoanCount = loans.filter(l => l.memberId === m.id && l.status === 'active').length;
+                return `
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-4 py-3">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white font-bold text-sm mr-3">
+                                ${m.name.split(' ').map(n => n[0]).join('')}
+                            </div>
+                            <div>
+                                <div class="font-medium text-gray-800">${m.name}</div>
+                                <div class="text-xs text-gray-500">ID: #${m.id}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${formatDate(m.joinDate)}</td>
+                    <td class="px-4 py-3 text-right font-medium text-blue-600">${formatCurrency(m.commitment)}</td>
+                    <td class="px-4 py-3 text-right font-medium text-green-600">${formatCurrency(m.contributed)}</td>
+                    <td class="px-4 py-3 text-right font-medium ${m.pending > 0 ? 'text-orange-600' : m.pending < 0 ? 'text-blue-600' : 'text-gray-400'}">
+                        ${m.pending !== 0 ? formatCurrency(Math.abs(m.pending)) : '-'}
+                        ${m.pending !== 0 ? `<span class="text-xs ml-1">(${m.pending > 0 ? 'Due' : 'Adv'})</span>` : ''}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        ${activeLoanCount > 0 ? `<span class="loan-badge active"><i class="fas fa-hand-holding-usd mr-1"></i>${activeLoanCount}</span>` : '-'}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="recordPayment(${m.id})" class="text-green-600 hover:text-green-800 mr-2" title="Record Payment">
+                            <i class="fas fa-rupee-sign"></i>
+                        </button>
+                        <button onclick="openMemberModal(${m.id})" class="text-blue-600 hover:text-blue-800 mr-2" title="Edit Member">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="deleteMember(${m.id})" class="text-red-500 hover:text-red-700" title="Remove Member">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function filterMembers(type) {
+            renderMembers(type);
+        }
+
+        function recordPayment(memberId) {
+            const amount = prompt('Enter payment amount (₹):');
+            if (amount && !isNaN(amount)) {
+                const member = members.find(m => m.id === memberId);
+                const payment = parseFloat(amount);
+                
+                member.pending -= payment;
+                member.contributed += payment;
+                
+                const account = prompt('Select account (nre/nro/cash):', 'cash');
+                const validAccount = ['nre', 'nro', 'cash'].includes(account) ? account : 'cash';
+                
+                transactions.push({
+                    id: Date.now(),
+                    date: new Date().toISOString().split('T')[0],
+                    description: `Payment from ${member.name}`,
+                    category: 'Monthly Fund',
+                    type: 'income',
+                    amount: payment,
+                    memberId: member.id,
+                    paymentMode: 'Cash',
+                    account: validAccount
+                });
+                
+                saveData();
+                renderMembers();
+                updateDashboard();
+                renderTransactions();
+                showToast('Payment recorded successfully', 'success');
+            }
+        }
+
+        function deleteMember(id) {
+            // Check if member has active loans
+            const activeLoans = loans.filter(l => l.memberId === id && l.status === 'active');
+            if (activeLoans.length > 0) {
+                alert(`Cannot delete member. They have ${activeLoans.length} active loan(s). Please close or reassign loans first.`);
+                return;
+            }
+            
+            if (confirm('Are you sure you want to remove this member?')) {
+                members = members.filter(m => m.id !== id);
+                saveData();
+                renderMembers();
+                updateDashboard();
+                updateMemberSelect();
+                showToast('Member removed', 'success');
+            }
+        }
+
+        // Loans Management
+        function openLoanModal(entryType = 'new') {
+            if (members.length === 0) {
+                showToast('Please add members first', 'error');
+                return;
+            }
+            
+            const modal = document.getElementById('loan-modal');
+            const content = document.getElementById('loan-modal-content');
+            
+            updateMemberSelect();
+            document.getElementById('loan-date').valueAsDate = new Date();
+            setLoanEntryType(entryType);
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function closeLoanModal() {
+            const modal = document.getElementById('loan-modal');
+            const content = document.getElementById('loan-modal-content');
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                document.getElementById('loan-form').reset();
+                setLoanEntryType('new');
+            }, 300);
+        }
+
+        function setLoanEntryType(entryType) {
+            const isExisting = entryType === 'existing';
+            document.getElementById('loan-entry-type').value = isExisting ? 'existing' : 'new';
+            document.getElementById('loan-modal-title').textContent = isExisting ? 'Add Existing Loan Balance' : 'Issue New Loan';
+            document.getElementById('loan-save-button').textContent = isExisting ? 'Add Existing Balance' : 'Issue Loan';
+            document.getElementById('loan-amount-label').innerHTML = isExisting
+                ? 'Existing Outstanding Balance (₹) <span class="text-red-500">*</span>'
+                : 'Loan Amount (₹) <span class="text-red-500">*</span>';
+            document.getElementById('existing-loan-notice').classList.toggle('hidden', !isExisting);
+            document.getElementById('loan-account-container').classList.toggle('hidden', isExisting);
+            document.getElementById('new-loan-notice').classList.toggle('hidden', isExisting);
+        }
+
+        function saveLoan(e) {
+            e.preventDefault();
+            
+            const memberId = parseInt(document.getElementById('loan-member').value);
+            const amount = parseFloat(document.getElementById('loan-amount').value);
+            const purpose = document.getElementById('loan-purpose').value;

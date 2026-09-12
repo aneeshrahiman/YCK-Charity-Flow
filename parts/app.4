@@ -1,0 +1,230 @@
+            if (loan.repaid >= loan.amount) {
+                        loan.status = 'closed';
+                        loan.closedDate = date;
+                        showToast('Loan fully repaid and closed!', 'success');
+                    }
+                    
+                    const member = members.find(m => m.id === loan.memberId);
+                    transaction.category = 'Loan Repayment';
+                    transaction.description = `Loan Repayment - ${member ? member.name : 'Unknown'} (Loan #${loan.id})`;
+                    transaction.loanId = loan.id;
+                    transaction.paymentMode = document.getElementById('payment-mode').value;
+                    
+                } else {
+                    // Regular income
+                    const memberId = document.getElementById('income-member').value;
+                    const paymentMode = document.getElementById('payment-mode').value;
+                    
+                    if ((source === 'Monthly Fund' || source === 'Ramadan Fund') && !memberId) {
+                        showToast('Please select a member for Monthly/Ramadan Fund', 'error');
+                        return;
+                    }
+                    
+                    const member = memberId ? members.find(m => m.id == memberId) : null;
+                    
+                    transaction.category = finalSource;
+                    transaction.paymentMode = paymentMode;
+                    transaction.memberId = memberId || null;
+                    transaction.description = member ? `${finalSource} - ${member.name}` : finalSource;
+                    
+                    if (member) {
+                        member.pending -= amount;
+                        member.contributed += amount;
+                    }
+                }
+            } else {
+                const beneficiary = document.getElementById('expense-beneficiary').value;
+                const customBen = document.getElementById('custom-beneficiary').value;
+                const finalBeneficiary = beneficiary === 'other' ? customBen : beneficiary;
+                
+                const item = document.getElementById('expense-item').value;
+                const customItem = document.getElementById('custom-item').value;
+                const finalItem = item === 'other' ? customItem : item;
+                
+                const description = document.getElementById('expense-description').value;
+                
+                transaction.category = finalItem;
+                transaction.beneficiary = finalBeneficiary;
+                transaction.description = description || `${finalItem} - ${finalBeneficiary}`;
+                
+                if (beneficiary === 'other' && customBen && !settings.beneficiaries.includes(customBen)) {
+                    settings.beneficiaries.push(customBen);
+                }
+                if (item === 'other' && customItem && !settings.expenseCategories.includes(customItem)) {
+                    settings.expenseCategories.push(customItem);
+                }
+            }
+
+            transactions.push(transaction);
+            document.getElementById('transaction-form').reset();
+            document.getElementById('trans-date').valueAsDate = new Date();
+            document.getElementById('trans-account').value = account;
+            toggleTransactionForm();
+            
+            saveData();
+            renderTransactions();
+            updateDashboard();
+            renderMembers();
+            renderLoans();
+            updateLoanSelect();
+            showToast('Transaction added successfully', 'success');
+        }
+
+        function renderTransactions() {
+            const tbody = document.getElementById('all-transactions-body');
+            const searchTerm = document.getElementById('search-transactions').value.toLowerCase();
+            const filterType = document.getElementById('filter-type').value;
+            const filterAccount = document.getElementById('filter-account').value;
+
+            let filtered = transactions.filter(t => {
+                const matchesSearch = t.description.toLowerCase().includes(searchTerm) || 
+                                    t.category.toLowerCase().includes(searchTerm);
+                const matchesType = filterType === 'all' || t.type === filterType;
+                const matchesAccount = filterAccount === 'all' || t.account === filterAccount;
+                return matchesSearch && matchesType && matchesAccount;
+            });
+
+            filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            tbody.innerHTML = filtered.map(t => `
+                <tr class="hover:bg-gray-50 transition slide-in">
+                    <td class="px-4 py-3 text-sm text-gray-600">${formatDate(t.date)}</td>
+                    <td class="px-4 py-3 font-medium text-gray-800">${t.description}</td>
+                    <td class="px-4 py-3"><span class="px-2 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600">${t.category}</span></td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${t.type === 'transfer' ? `${getAccountLabel(t.account)} → ${getAccountLabel(t.toAccount)}` : getAccountLabel(t.account)}</td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${t.type === 'income' ? 'bg-green-100 text-green-800' : t.type === 'transfer' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}">
+                            ${t.type === 'income' ? 'Income' : t.type === 'transfer' ? 'Transfer' : 'Expense'}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-right font-bold ${t.type === 'income' ? 'text-green-600' : t.type === 'transfer' ? 'text-blue-600' : 'text-red-600'}">
+                        ${t.type === 'transfer' ? '↔' : t.type === 'income' ? '+' : '-'}${formatCurrency(t.amount)}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="deleteTransaction(${t.id})" class="text-red-500 hover:text-red-700 transition">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterTransactions() {
+            renderTransactions();
+        }
+
+        function deleteTransaction(id) {
+            if (confirm('Are you sure you want to delete this transaction?')) {
+                const trans = transactions.find(t => t.id === id);
+                
+                // Reverse loan repayment if applicable
+                if (trans.loanId && trans.type === 'income') {
+                    const loan = loans.find(l => l.id === trans.loanId);
+                    if (loan) {
+                        loan.repaid -= trans.amount;
+                        loan.repayments = loan.repayments.filter(r => r.transactionId !== id);
+                        if (loan.status === 'closed' && loan.repaid < loan.amount) {
+                            loan.status = 'active';
+                            loan.closedDate = null;
+                        }
+                    }
+                }
+                
+                // Reverse member contribution if applicable
+                if (trans.type === 'income' && trans.memberId && !trans.loanId) {
+                    const member = members.find(m => m.id == trans.memberId);
+                    if (member) {
+                        member.pending += trans.amount;
+                        member.contributed -= trans.amount;
+                    }
+                }
+                
+                transactions = transactions.filter(t => t.id !== id);
+                saveData();
+                renderTransactions();
+                updateDashboard();
+                renderMembers();
+                renderLoans();
+                updateLoanSelect();
+                showToast('Transaction deleted', 'success');
+            }
+        }
+
+        // Internal transfer: money is moved from a bank account to cash, without affecting income or expense totals.
+        function openAtmModal() {
+            openInternalTransferModal('withdrawal');
+        }
+
+        function openCashDepositModal() {
+            openInternalTransferModal('deposit');
+        }
+
+        function openInternalTransferModal(mode) {
+            const modal = document.getElementById('atm-modal');
+            const content = document.getElementById('atm-modal-content');
+            document.getElementById('atm-date').valueAsDate = new Date();
+            setInternalTransferMode(mode);
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function setInternalTransferMode(mode) {
+            const isDeposit = mode === 'deposit';
+            document.getElementById('transfer-mode').value = mode;
+            document.getElementById('transfer-modal-title').textContent = isDeposit ? 'Cash Deposit to NRO Account' : 'ATM Withdrawal to Cash';
+            document.getElementById('transfer-notice').className = `${isDeposit ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-blue-50 border-blue-200 text-blue-800'} border rounded-lg p-3 text-sm`;
+            document.getElementById('transfer-notice-text').textContent = isDeposit
+                ? 'This is an internal transfer, not income or an expense. It reduces Cash in Hand and increases the NRO account by the same amount.'
+                : 'This is an internal transfer, not income or an expense. It reduces the chosen bank account and increases Cash in Hand by the same amount.';
+            document.getElementById('transfer-account-container').classList.toggle('hidden', isDeposit);
+        }
+
+        function closeAtmModal() {
+            const modal = document.getElementById('atm-modal');
+            const content = document.getElementById('atm-modal-content');
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.querySelector('form').reset();
+            }, 300);
+        }
+
+        function saveAtmWithdrawal(e) {
+            e.preventDefault();
+            const account = document.getElementById('atm-from-account').value;
+            const amount = parseFloat(document.getElementById('atm-amount').value);
+            const date = document.getElementById('atm-date').value;
+            const note = document.getElementById('atm-note').value.trim();
+            const isDeposit = document.getElementById('transfer-mode').value === 'deposit';
+            if (!amount || amount <= 0 || !date) {
+                showToast('Enter a valid withdrawal amount and date', 'error');
+                return;
+            }
+
+            transactions.push({
+                id: Date.now(),
+                date,
+                type: 'transfer',
+                amount,
+                account: isDeposit ? 'cash' : account,
+                toAccount: isDeposit ? 'nro' : 'cash',
+                category: isDeposit ? 'Cash Deposit' : 'ATM Withdrawal',
+                description: isDeposit
+                    ? `Cash deposit: Cash in Hand to NRO Account${note ? ` — ${note}` : ''}`
+                    : `ATM withdrawal: ${getAccountLabel(account)} to Cash in Hand${note ? ` — ${note}` : ''}`
+            });
+            saveData();
+            closeAtmModal();
+            renderTransactions();
+            updateDashboard();
+            showToast(isDeposit ? 'Cash deposit recorded: cash reduced and NRO balance increased' : 'ATM withdrawal recorded: bank balance reduced and cash increased', 'success');
+        }
+
+        // Members
+        function openMemberModal(memberId = null) {
+            const modal = document.getElementById('member-modal');
+            const 
